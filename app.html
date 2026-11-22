@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>دفترنا</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#f1eefb;color:#2b2540}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#6c4be8,#e85d9a)}
+.box{background:#fff;padding:32px;border-radius:20px;width:92%;max-width:360px;box-shadow:0 20px 50px #0003}
+.box h1{margin:0 0 20px;color:#6c4be8}
+input,select,button{font:inherit;padding:10px;border-radius:10px;border:1px solid #d8d2ee}
+.box input{width:100%;margin-bottom:10px}
+button{background:#6c4be8;color:#fff;border:0;cursor:pointer;transition:opacity .2s}
+button:hover{opacity:.9}
+button.sm{padding:5px 10px;font-size:12px}
+button.red{background:#e0475b}
+button.grn{background:#2bb673}
+button.gry{background:#64748b}
+#err{color:#e0475b;font-size:13px;min-height:18px;margin-bottom:6px}
+#app{display:none;min-height:100vh}
+.side{width:210px;background:#fff;padding:18px;display:flex;flex-direction:column;gap:6px;box-shadow:-4px 0 20px #0001}
+.side h2{color:#6c4be8;margin:0 0 6px}
+.side small{color:#888;margin-bottom:10px}
+.nav a{display:block;padding:10px 12px;border-radius:10px;cursor:pointer;margin-bottom:2px}
+.nav a:hover{background:#f5f3ff}
+.nav a.on{background:#6c4be8;color:#fff}
+main{flex:1;padding:20px;overflow:auto}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.tile{color:#fff;border-radius:16px;padding:16px}
+.tile b{display:block;font-size:24px;margin-top:6px}
+.card{background:#fff;border-radius:16px;padding:16px;margin-bottom:16px;overflow-x:auto;box-shadow:0 2px 10px #00000008}
+.card-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.card h3{margin:0}
+.search-box{padding:7px 12px;border-radius:8px;border:1px solid #d8d2ee;min-width:200px;font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.row input,.row select{flex:1;min-width:120px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 8px;border-bottom:1px solid #eee;text-align:right}
+th{background:#faf9fe;color:#555}
+.bar{background:#eee;border-radius:10px;height:14px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:#2bb673;transition:width .4s}
+.late{color:#e0475b;font-weight:bold}
+@media(max-width:700px){#app{flex-direction:column}.side{width:100%;flex-direction:row;flex-wrap:wrap;align-items:center}.nav{display:flex;flex-wrap:wrap;gap:4px}}
+@media print{
+  .side,.no-print{display:none!important}
+  body{background:#fff}
+  main{padding:0}
+  .card{box-shadow:none;border:1px solid #ddd}
+}
+</style>
+</head>
+<body>
+
+<div id="login"><div class="box">
+<h1>دفترنا 📒</h1>
+<input id="em" type="email" placeholder="الايميل" dir="ltr" onkeydown="if(event.key==='Enter')login()">
+<input id="pw" type="password" placeholder="الباسورد" dir="ltr" onkeydown="if(event.key==='Enter')login()">
+<div id="err"></div>
+<button id="btnLogin" style="width:100%" onclick="login()">دخول</button>
+</div></div>
+
+<div id="app">
+<div class="side">
+<h2>دفترنا 📒</h2><small id="who"></small>
+<div class="nav">
+<a data-v="Dash" onclick="nav('Dash')">🏠 الرئيسية</a>
+<a data-v="Clients" onclick="nav('Clients')">👥 العملاء</a>
+<a data-v="Invoices" onclick="nav('Invoices')">🧾 الفواتير</a>
+<a data-v="Tasks" onclick="nav('Tasks')">✅ المهام</a>
+<a data-v="Entries" onclick="nav('Entries')">📚 القيود</a>
+<a data-v="Trial" onclick="nav('Trial')">⚖️ ميزان المراجعة</a>
+<a data-v="Monitor" id="navMon" style="display:none" onclick="nav('Monitor')">📊 متابعة الموظفين</a>
+</div>
+<button class="red sm" style="margin-top:auto" onclick="logout()">خروج</button>
+</div>
+<main id="main"></main>
+</div>
+
+<script>
+const sb=supabase.createClient('https://oesjudkbjkpllgbxipre.supabase.co','sb_publishable_HyXVLhhlwxKK5RM4s8LOEA_n375CZ9l');
+let S={role:'employee',name:'',c:[],i:[],t:[],e:[],p:[],v:'Dash',q:''};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const money=n=>Number(n||0).toLocaleString('en-US');
+const today=()=>new Date().toLocaleDateString('en-CA');
+const isAdmin=()=>S.role==='admin';
+const sum=a=>a.reduce((s,x)=>s+Number(x.amount||0),0);
+const cname=id=>(S.c.find(x=>x.id===id)||{}).name||'—';
+const pname=id=>(S.p.find(x=>x.id===id)||{}).full_name||'—';
+const copts=()=>'<option value="">— العميل —</option>'+S.c.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+const delBtn=(t,id)=>isAdmin()?`<button class="sm red no-print" onclick="del('${t}','${id}')">حذف</button>`:'';
+const v=id=>$(id).value.trim();
+
+async function start(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){enter(session.user)}else{show('login')}
+}
+function show(w){$('login').style.display=w==='login'?'flex':'none';$('app').style.display=w==='app'?'flex':'none'}
+
+async function login(){
+  $('err').textContent='';
+  $('btnLogin').textContent='جاري الدخول...';
+  const {data,error}=await sb.auth.signInWithPassword({email:v('em'),password:$('pw').value});
+  $('btnLogin').textContent='دخول';
+  if(error){$('err').textContent='الايميل أو الباسورد غلط';return}
+  enter(data.user);
+}
+
+async function logout(){await sb.auth.signOut();show('login')}
+
+async function enter(u){
+  const {data:p}=await sb.from('profiles').select('role,full_name').eq('id',u.id).single();
+  S.role=(p&&p.role)||'employee';S.name=(p&&p.full_name)||u.email;
+  show('app');
+  $('main').innerHTML='<div class="card">جاري تحميل البيانات... ⏳</div>';
+  await load();
+}
+
+async function load(){
+  const r=await Promise.all([
+    sb.from('clients').select('*').order('created_at',{ascending:false}),
+    sb.from('invoices').select('*').order('created_at',{ascending:false}),
+    sb.from('tasks').select('*').order('due_date',{ascending:true}),
+    sb.from('entries').select('*').order('entry_date',{ascending:false}),
+    sb.from('profiles').select('id,full_name,role')]);
+  S.c=r[0].data||[];S.i=r[1].data||[];S.t=r[2].data||[];S.e=r[3].data||[];S.p=r[4].data||[];
+  render();
+}
+
+function nav(x){S.v=x;S.q='';render()}
+
+function setSearch(val){
+  S.q=val.toLowerCase();
+  const tbody=document.querySelector('#dataTable tbody');
+  if(!tbody)return;
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    tr.style.display=tr.textContent.toLowerCase().includes(S.q)?'':'none';
+  });
+}
+
+function render(){
+  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===S.v));
+  $('who').textContent=S.name+' — '+(isAdmin()?'مدير':'موظف');
+  $('navMon').style.display=isAdmin()?'block':'none';
+  $('main').innerHTML=window['v'+S.v]();
+}
+
+async function add(t,o){
+  const {error}=await sb.from(t).insert(o);
+  if(error){alert('حصل خطأ: '+error.message);return}
+  await load();
+}
+async function upd(t,id,o){
+  const {error}=await sb.from(t).update(o).eq('id',id);
+  if(error){alert('حصل خطأ: '+error.message);return}
+  await load();
+}
+async function del(t,id){
+  if(!confirm('متأكدة من الحذف؟'))return;
+  const {error}=await sb.from(t).delete().eq('id',id);
+  if(error){alert('حصل خطأ: '+error.message);return}
+  await load();
+}
+
+function vDash(){
+  const su=sum(S.i.filter(x=>!x.paid)),sp=sum(S.i.filter(x=>x.paid)),tot=su+sp,pct=tot?Math.round(sp/tot*100):0;
+  const open=S.t.filter(x=>!x.done);
+  const cols=['#6c4be8','#f59e0b','#2bb673','#e85d9a'];
+  const months=[];
+  for(let k=0;k<6;k++){const n=new Date(),d=new Date(n.getFullYear(),n.getMonth()-k,1);months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'))}
+  const vals=months.map(m=>sum(S.i.filter(x=>(x.issue_date||'').slice(0,7)===m)));
+  const mx=Math.max(...vals,1);
+  const bars=vals.map((q,k)=>{const h=q/mx*100;return `<rect x="${k*56+10}" y="${110-h}" width="34" height="${h}" rx="6" fill="${cols[k%4]}"/><text x="${k*56+27}" y="126" text-anchor="middle" font-size="10">${months[k].slice(5)}</text>`}).join('');
+  return `<div class="tiles">
+  <div class="tile" style="background:#6c4be8">العملاء<b>${S.c.length}</b></div>
+  <div class="tile" style="background:#f59e0b">مستحق التحصيل<b>${money(su)}</b></div>
+  <div class="tile" style="background:#2bb673">تم تحصيله<b>${money(sp)}</b></div>
+  <div class="tile" style="background:#e85d9a">مهام مفتوحة<b>${open.length}</b></div></div>
+  <div class="card"><h3>نسبة التحصيل ${pct}%</h3><div class="bar"><i style="width:${pct}%"></i></div></div>
+  <div class="card"><h3>الفواتير آخر 6 شهور</h3><svg viewBox="0 0 340 135" style="width:100%;max-width:420px">${bars}</svg></div>
+  <div class="card"><h3>أقرب المهام</h3>${open.slice(0,5).map(x=>`<div style="padding:4px 0">▫️ ${esc(x.title)} <small style="color:#888">(${esc(cname(x.client_id))} - ${esc(x.due_date||'بدون موعد')})</small></div>`).join('')||'مفيش مهام 🎉'}</div>`;
+}
+
+function vClients(){
+  return `<div class="card no-print"><h3>إضافة عميل</h3><div class="row" style="margin-top:10px">
+  <input id="n" placeholder="الاسم"><select id="ty"><option>فرد</option><option>شركة</option><option>مؤسسة</option><option>جمعية</option><option>مهني</option></select>
+  <input id="ph" placeholder="التليفون"><input id="tx" placeholder="الرقم الضريبي">
+  <input id="fee" type="number" placeholder="الأتعاب الشهرية"><button onclick="addClient()">إضافة</button></div></div>
+  <div class="card">
+  <div class="card-head"><h3>قائمة العملاء (${S.c.length})</h3><input class="search-box no-print" placeholder="🔍 بحث بالاسم أو التليفون..." oninput="setSearch(this.value)"></div>
+  <table id="dataTable"><thead><tr><th>الاسم</th><th>النوع</th><th>التليفون</th><th>الرقم الضريبي</th><th>الأتعاب</th><th class="no-print"></th></tr></thead><tbody>
+  ${S.c.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.type)}</td><td>${esc(x.phone)}</td><td>${esc(x.tax_id||'—')}</td><td>${money(x.monthly_fee)}</td><td class="no-print">${delBtn('clients',x.id)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function addClient(){
+  if(!v('n'))return alert('اكتبي الاسم');
+  add('clients',{name:v('n'),type:v('ty'),phone:v('ph'),tax_id:v('tx'),monthly_fee:Number(v('fee')||0)});
+}
+
+function vInvoices(){
+  return `<div class="card no-print"><h3>فاتورة جديدة</h3><div class="row" style="margin-top:10px">
+  <select id="ic">${copts()}</select><input id="id" placeholder="البيان"><input id="ia" type="number" placeholder="المبلغ">
+  <input id="idue" type="date"><button onclick="addInv()">إضافة</button></div></div>
+  <div class="card">
+  <div class="card-head"><h3>الفواتير</h3><div>
+    <input class="search-box no-print" placeholder="🔍 بحث في الفواتير..." oninput="setSearch(this.value)">
+    <button class="sm gry no-print" onclick="window.print()">🖨️ طباعة</button>
+  </div></div>
+  <table id="dataTable"><thead><tr><th>العميل</th><th>البيان</th><th>المبلغ</th><th>الاستحقاق</th><th>الحالة</th><th class="no-print"></th></tr></thead><tbody>
+  ${S.i.map(x=>{const late=!x.paid&&x.due_date&&x.due_date<today();
+  return `<tr><td>${esc(cname(x.client_id))}</td><td>${esc(x.description)}</td><td>${money(x.amount)}</td>
+  <td class="${late?'late':''}">${esc(x.due_date||'—')}</td>
+  <td>${x.paid?'✅ مدفوعة':`<button class="sm grn" onclick="upd('invoices','${x.id}',{paid:true,paid_on:today()})">تم التحصيل</button>`}</td><td class="no-print">${delBtn('invoices',x.id)}</td></tr>`}).join('')}</tbody></table></div>`;
+}
+function addInv(){
+  if(!v('ic')||!v('ia'))return alert('اختاري العميل واكتبي المبلغ');
+  add('invoices',{client_id:v('ic'),description:v('id'),amount:Number(v('ia')),issue_date:today(),due_date:v('idue')||null});
+}
+
+function vTasks(){
+  return `<div class="card no-print"><h3>مهمة جديدة</h3><div class="row" style="margin-top:10px">
+  <input id="tt" placeholder="المهمة"><select id="tk"><option>إقرار ضريبي</option><option>مراجعة</option><option>تسجيل قيود</option><option>أخرى</option></select>
+  <select id="tc">${copts()}</select>
+  ${isAdmin()?`<select id="ta">${S.p.map(p=>`<option value="${p.id}">${esc(p.full_name||p.id)}</option>`).join('')}</select>`:''}
+  <input id="td" type="date"><button onclick="addTask()">إضافة</button></div></div>
+  <div class="card">
+  <div class="card-head"><h3>المهام</h3><input class="search-box no-print" placeholder="🔍 بحث في المهام..." oninput="setSearch(this.value)"></div>
+  <table id="dataTable"><thead><tr><th></th><th>المهمة</th><th>النوع</th><th>العميل</th>${isAdmin()?'<th>الموظف</th>':''}<th>الموعد</th><th class="no-print"></th></tr></thead><tbody>
+  ${S.t.map(x=>{const late=!x.done&&x.due_date&&x.due_date<today();
+  return `<tr><td><input type="checkbox" ${x.done?'checked':''} onchange="upd('tasks','${x.id}',{done:this.checked,done_at:this.checked?new Date().toISOString():null})"></td>
+  <td style="${x.done?'text-decoration:line-through;color:#999':''}">${esc(x.title)}</td><td>${esc(x.kind)}</td><td>${esc(cname(x.client_id))}</td>${isAdmin()?`<td>${esc(pname(x.assigned_to))}</td>`:''}
+  <td class="${late?'late':''}">${esc(x.due_date||'—')}</td><td class="no-print">${delBtn('tasks',x.id)}</td></tr>`}).join('')}</tbody></table></div>`;
+}
+function addTask(){
+  if(!v('tt'))return alert('اكتبي المهمة');
+  const o={title:v('tt'),kind:v('tk'),client_id:v('tc')||null,due_date:v('td')||null};
+  if(isAdmin()&&$('ta')&&v('ta'))o.assigned_to=v('ta');
+  add('tasks',o);
+}
+
+function vEntries(){
+  return `<div class="card no-print"><h3>قيد يومية</h3><div class="row" style="margin-top:10px">
+  <input id="ed" type="date" value="${today()}"><input id="es" placeholder="البيان">
+  <input id="edb" placeholder="من حساب (مدين)"><input id="ecr" placeholder="إلى حساب (دائن)">
+  <input id="ea" type="number" placeholder="المبلغ"><button onclick="addEntry()">إضافة</button></div></div>
+  <div class="card">
+  <div class="card-head"><h3>دفتر اليومية</h3><input class="search-box no-print" placeholder="🔍 بحث بالحساب أو البيان..." oninput="setSearch(this.value)"></div>
+  <table id="dataTable"><thead><tr><th>التاريخ</th><th>البيان</th><th>مدين</th><th>دائن</th><th>المبلغ</th><th class="no-print"></th></tr></thead><tbody>
+  ${S.e.map(x=>`<tr><td>${esc(x.entry_date)}</td><td>${esc(x.description)}</td><td>${esc(x.debit)}</td><td>${esc(x.credit)}</td><td>${money(x.amount)}</td><td class="no-print">${delBtn('entries',x.id)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function addEntry(){
+  if(!v('edb')||!v('ecr')||!v('ea'))return alert('اكتبي الحسابين والمبلغ');
+  add('entries',{entry_date:v('ed'),description:v('es'),debit:v('edb'),credit:v('ecr'),amount:Number(v('ea'))});
+}
+
+function vTrial(){
+  const m={};
+  S.e.forEach(x=>{const a=Number(x.amount||0);
+    if(x.debit){m[x.debit]=m[x.debit]||{d:0,c:0};m[x.debit].d+=a}
+    if(x.credit){m[x.credit]=m[x.credit]||{d:0,c:0};m[x.credit].c+=a}});
+  let td=0,tc=0;
+  const rows=Object.keys(m).map(k=>{td+=m[k].d;tc+=m[k].c;
+    return `<tr><td>${esc(k)}</td><td>${money(m[k].d)}</td><td>${money(m[k].c)}</td><td>${money(m[k].d-m[k].c)}</td></tr>`}).join('');
+  return `<div class="card">
+  <div class="card-head"><h3>ميزان المراجعة</h3><div class="no-print">
+    <button class="sm grn" onclick="exportTrialCSV()">📊 تصدير Excel</button>
+    <button class="sm gry" onclick="window.print()">🖨️ طباعة</button>
+  </div></div>
+  <table id="trialTable"><thead><tr><th>الحساب</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody>${rows}
+  <tr><th>الإجمالي</th><th>${money(td)}</th><th>${money(tc)}</th><th>${td===tc?'✅ متزن':'⚠️ غير متزن'}</th></tr></tbody></table></div>`;
+}
+
+function exportTrialCSV(){
+  const rows=[...document.querySelectorAll('#trialTable tr')].map(tr=>
+    [...tr.children].map(td=>`"${td.textContent.replace(/"/g,'""')}"`).join(',')
+  ).join('\n');
+  const blob=new Blob(['\uFEFF'+rows],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`ميزان_المراجعة_${today()}.csv`;
+  a.click();
+}
+
+function vMonitor(){
+  const rows=S.p.map(p=>{
+    const t=S.t.filter(x=>x.assigned_to===p.id),d=t.filter(x=>x.done),o=t.filter(x=>!x.done);
+    const late=o.filter(x=>x.due_date&&x.due_date<today()).length;
+    const pct=t.length?Math.round(d.length/t.length*100):0;
+    const inv=S.i.filter(x=>x.created_by===p.id).length,en=S.e.filter(x=>x.created_by===p.id).length;
+    return `<div class="card"><h3>${esc(p.full_name||p.id)} <small style="color:#6c4be8">${p.role==='admin'?'(مدير)':'(موظف)'}</small></h3>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <p>نسبة الإنجاز: <b>${pct}%</b> — أتمّ <b>${d.length}</b> من أصل <b>${t.length}</b> مهام — متبقي <b>${o.length}</b> <span class="late">${late?'(متأخر '+late+')':''}</span></p>
+    <small style="color:#666">النشاط المسجل: <b>${inv}</b> فاتورة | <b>${en}</b> قيد يومية</small></div>`;
+  }).join('');
+  return rows || '<div class="card">لا يوجد موظفون مسجلون حالياً</div>';
+}
+
+start();
+</script>
+</body>
+</html>
